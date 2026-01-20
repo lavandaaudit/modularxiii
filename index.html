@@ -1398,22 +1398,24 @@
                 const specCtx = specCanvas.getContext('2d');
 
                 const analyser = this.app.audioCore.analyser;
-                analyser.fftSize = 512; // Smaller FFT for smoother shapes
+                analyser.fftSize = 256;
                 const bufferLength = analyser.frequencyBinCount;
                 const timeData = new Uint8Array(bufferLength);
                 const freqData = new Uint8Array(bufferLength);
+
+                let hueOffset = 0;
 
                 const draw = () => {
                     requestAnimationFrame(draw);
 
                     // Unified Dimensions
-                    scopeCanvas.width = scopeCanvas.clientWidth;
-                    scopeCanvas.height = scopeCanvas.clientHeight;
-                    specCanvas.width = specCanvas.clientWidth;
-                    specCanvas.height = specCanvas.clientHeight;
+                    const w = scopeCanvas.clientWidth;
+                    const h = scopeCanvas.clientHeight;
+                    scopeCanvas.width = w;
+                    scopeCanvas.height = h;
+                    specCanvas.width = w;
+                    specCanvas.height = h;
 
-                    const w = scopeCanvas.width;
-                    const h = scopeCanvas.height;
                     const cx = w / 2;
                     const cy = h / 2;
 
@@ -1421,61 +1423,65 @@
                     analyser.getByteTimeDomainData(timeData);
                     analyser.getByteFrequencyData(freqData);
 
-                    // 1. SCOPE: "Ferro-magnetic" Lines (Scattering)
-                    scopeCtx.fillStyle = '#000';
+                    hueOffset += 2;
+
+                    // 1. SCOPE: Chaotic "String Theory"
+                    // Clear with fade for trails
+                    scopeCtx.fillStyle = 'rgba(0,0,0,0.2)';
                     scopeCtx.fillRect(0, 0, w, h);
-                    scopeCtx.lineWidth = 1;
-                    scopeCtx.strokeStyle = 'rgba(0, 255, 204, 0.5)';
+
+                    scopeCtx.lineWidth = 2;
                     scopeCtx.beginPath();
 
-                    for (let i = 0; i < bufferLength; i += 4) {
+                    for (let i = 0; i < bufferLength; i++) {
                         const v = (timeData[i] / 128.0) - 1; // -1 to 1
-                        const r = (Math.min(w, h) / 3) + (v * 100);
-                        const angle = (i / bufferLength) * Math.PI * 2;
+                        const angle = (i / bufferLength) * Math.PI * 8 + (hueOffset * 0.01); // Spin
+                        const r = (Math.min(w, h) / 2) * (1 + v * 3); // Explode outwards
 
                         const x = cx + Math.cos(angle) * r;
                         const y = cy + Math.sin(angle) * r;
 
-                        // Scatter lines
-                        const x2 = cx + Math.cos(angle) * (r + (v * 200));
-                        const y2 = cy + Math.sin(angle) * (r + (v * 200));
+                        scopeCtx.strokeStyle = `hsl(${(i * 5 + hueOffset) % 360}, 100%, 50%)`;
+                        if (i === 0) scopeCtx.moveTo(x, y);
+                        else scopeCtx.lineTo(x, y);
 
-                        scopeCtx.moveTo(x, y);
-                        scopeCtx.lineTo(x2, y2);
+                        // Random sparks
+                        if (Math.abs(v) > 0.1 && Math.random() > 0.8) {
+                            scopeCtx.fillStyle = '#fff';
+                            scopeCtx.fillRect(x, y, 2, 2);
+                        }
                     }
                     scopeCtx.stroke();
 
-                    // 2. SPECTRUM: "Magnetic Core" (Blob)
-                    specCtx.clearRect(0, 0, w, h);
-                    specCtx.fillStyle = '#0a0a0a';
+                    // 2. SPECTRUM: "Liquid Plasma"
+                    specCtx.fillStyle = 'rgba(0,0,0,0.3)'; // Trails
                     specCtx.fillRect(0, 0, w, h);
 
-                    // Draw filled organic shape
-                    specCtx.fillStyle = 'var(--accent-color)';
-                    specCtx.shadowBlur = 15;
-                    specCtx.shadowColor = 'var(--accent-color)';
-                    specCtx.beginPath();
+                    specCtx.globalCompositeOperation = 'lighter'; // Additive blending
 
-                    const radius = Math.min(w, h) / 4;
-                    for (let i = 0; i < bufferLength; i++) {
+                    for (let i = 0; i < bufferLength; i += 2) {
                         const val = freqData[i];
-                        const r = radius + (val / 255.0) * 40;
-                        const angle = (i / bufferLength) * Math.PI * 2;
-                        // Mirror for symmetry
-                        const x = cx + Math.cos(angle) * r;
-                        const y = cy + Math.sin(angle) * r;
+                        if (val < 10) continue;
 
-                        if (i === 0) specCtx.moveTo(x, y);
-                        else specCtx.lineTo(x, y);
+                        const rS = (val / 255) * (Math.min(w, h) * 0.8);
+                        const angle = (i / bufferLength) * Math.PI * 2 + (hueOffset * 0.05);
+
+                        const x = cx + Math.cos(angle) * (rS * 0.5);
+                        const y = cy + Math.sin(angle) * (rS * 0.5);
+
+                        specCtx.beginPath();
+                        specCtx.arc(x, y, rS * 0.2, 0, Math.PI * 2);
+                        specCtx.fillStyle = `hsl(${(i * 2 + hueOffset * 2) % 360}, 100%, 60%)`;
+                        specCtx.fill();
+
+                        // Secondary chaotic orb
+                        specCtx.beginPath();
+                        const x2 = cx + Math.sin(angle * 2) * (rS);
+                        const y2 = cy + Math.cos(angle * 3) * (rS);
+                        specCtx.arc(x2, y2, rS * 0.1, 0, Math.PI * 2);
+                        specCtx.fillStyle = `hsl(${(i * 10 - hueOffset) % 360}, 80%, 50%)`;
+                        specCtx.fill();
                     }
-                    specCtx.closePath();
-                    specCtx.fill();
-
-                    // Inner "black hole"
-                    specCtx.globalCompositeOperation = 'destination-out';
-                    specCtx.beginPath();
-                    specCtx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
-                    specCtx.fill();
                     specCtx.globalCompositeOperation = 'source-over';
                 };
                 draw();
