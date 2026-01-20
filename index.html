@@ -1398,44 +1398,85 @@
                 const specCtx = specCanvas.getContext('2d');
 
                 const analyser = this.app.audioCore.analyser;
-                analyser.fftSize = 2048;
+                analyser.fftSize = 512; // Smaller FFT for smoother shapes
                 const bufferLength = analyser.frequencyBinCount;
                 const timeData = new Uint8Array(bufferLength);
                 const freqData = new Uint8Array(bufferLength);
 
                 const draw = () => {
                     requestAnimationFrame(draw);
+
+                    // Unified Dimensions
+                    scopeCanvas.width = scopeCanvas.clientWidth;
+                    scopeCanvas.height = scopeCanvas.clientHeight;
+                    specCanvas.width = specCanvas.clientWidth;
+                    specCanvas.height = specCanvas.clientHeight;
+
                     const w = scopeCanvas.width;
                     const h = scopeCanvas.height;
+                    const cx = w / 2;
+                    const cy = h / 2;
+
+                    // Get Data
                     analyser.getByteTimeDomainData(timeData);
+                    analyser.getByteFrequencyData(freqData);
+
+                    // 1. SCOPE: "Ferro-magnetic" Lines (Scattering)
                     scopeCtx.fillStyle = '#000';
                     scopeCtx.fillRect(0, 0, w, h);
-                    scopeCtx.lineWidth = 2;
-                    scopeCtx.strokeStyle = 'var(--accent-color)';
-                    scopeCtx.shadowBlur = 4;
-                    scopeCtx.shadowColor = 'var(--accent-color)';
+                    scopeCtx.lineWidth = 1;
+                    scopeCtx.strokeStyle = 'rgba(0, 255, 204, 0.5)';
                     scopeCtx.beginPath();
-                    const sliceWidth = w * 1.0 / bufferLength;
-                    let x = 0;
-                    for (let i = 0; i < bufferLength; i++) {
-                        const v = timeData[i] / 128.0;
-                        const y = v * h / 2;
-                        if (i === 0) scopeCtx.moveTo(x, y);
-                        else scopeCtx.lineTo(x, y);
-                        x += sliceWidth;
+
+                    for (let i = 0; i < bufferLength; i += 4) {
+                        const v = (timeData[i] / 128.0) - 1; // -1 to 1
+                        const r = (Math.min(w, h) / 3) + (v * 100);
+                        const angle = (i / bufferLength) * Math.PI * 2;
+
+                        const x = cx + Math.cos(angle) * r;
+                        const y = cy + Math.sin(angle) * r;
+
+                        // Scatter lines
+                        const x2 = cx + Math.cos(angle) * (r + (v * 200));
+                        const y2 = cy + Math.sin(angle) * (r + (v * 200));
+
+                        scopeCtx.moveTo(x, y);
+                        scopeCtx.lineTo(x2, y2);
                     }
                     scopeCtx.stroke();
-                    analyser.getByteFrequencyData(freqData);
-                    specCtx.fillStyle = '#000';
+
+                    // 2. SPECTRUM: "Magnetic Core" (Blob)
+                    specCtx.clearRect(0, 0, w, h);
+                    specCtx.fillStyle = '#0a0a0a';
                     specCtx.fillRect(0, 0, w, h);
-                    const barWidth = (w / bufferLength) * 2.5;
-                    let barX = 0;
+
+                    // Draw filled organic shape
+                    specCtx.fillStyle = 'var(--accent-color)';
+                    specCtx.shadowBlur = 15;
+                    specCtx.shadowColor = 'var(--accent-color)';
+                    specCtx.beginPath();
+
+                    const radius = Math.min(w, h) / 4;
                     for (let i = 0; i < bufferLength; i++) {
-                        const barHeight = freqData[i] / 255 * h;
-                        specCtx.fillStyle = `hsl(${i / bufferLength * 360}, 100%, 50%)`;
-                        specCtx.fillRect(barX, h - barHeight, barWidth, barHeight);
-                        barX += barWidth + 1;
+                        const val = freqData[i];
+                        const r = radius + (val / 255.0) * 40;
+                        const angle = (i / bufferLength) * Math.PI * 2;
+                        // Mirror for symmetry
+                        const x = cx + Math.cos(angle) * r;
+                        const y = cy + Math.sin(angle) * r;
+
+                        if (i === 0) specCtx.moveTo(x, y);
+                        else specCtx.lineTo(x, y);
                     }
+                    specCtx.closePath();
+                    specCtx.fill();
+
+                    // Inner "black hole"
+                    specCtx.globalCompositeOperation = 'destination-out';
+                    specCtx.beginPath();
+                    specCtx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
+                    specCtx.fill();
+                    specCtx.globalCompositeOperation = 'source-over';
                 };
                 draw();
             }
