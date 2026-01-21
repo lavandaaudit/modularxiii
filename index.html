@@ -1405,14 +1405,15 @@
                 const maxParticles = 1500; // Condensed for smaller screen
                 let hueBase = 0;
 
-                // Resize handler
-                const resize = () => {
-                    canvas.width = container.clientWidth;
-                    canvas.height = container.clientHeight;
-                };
-                window.addEventListener('resize', resize);
-                // Initial resize slightly delayed to ensure layout
-                setTimeout(resize, 0);
+                // Advanced Resize Observer for perfect scaling on any monitor
+                const resizeObserver = new ResizeObserver(entries => {
+                    for (let entry of entries) {
+                        const { width, height } = entry.contentRect;
+                        canvas.width = width;
+                        canvas.height = height;
+                    }
+                });
+                resizeObserver.observe(container);
 
                 class Particle {
                     constructor(w, h) {
