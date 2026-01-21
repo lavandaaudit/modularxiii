@@ -57,36 +57,149 @@
             <style>
                 /* Mobile Responsiveness */
                 @media (max-width: 768px) {
+                    body {
+                        overflow-y: auto !important;
+                        height: auto;
+                        overscroll-behavior-y: contain;
+                    }
+
                     #app {
-                        width: 100vw;
-                        height: 100vh;
+                        width: 100%;
+                        height: auto;
+                        min-height: 100vh;
                         margin: 0;
                         border: none;
+                        overflow: visible;
+                        padding: 0;
+                    }
+
+                    .top-bar {
+                        flex-direction: column;
+                        gap: 12px;
+                        padding: 20px 10px !important;
+                        height: auto !important;
                     }
 
                     .modular-grid {
-                        display: flex;
-                        flex-direction: column;
-                        overflow-y: auto;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        overflow: visible !important;
+                        height: auto !important;
+                        gap: 15px;
+                        padding: 10px;
                     }
 
-                    /* Reset specific grid areas for flex layout */
-                    .sequencer-layer,
-                    .control-layer,
-                    .mod-matrix,
-                    .osc-bank,
-                    .fx-matrix {
-                        grid-column: auto;
-                        grid-row: auto;
+                    .module {
+                        grid-column: auto !important;
+                        grid-row: auto !important;
+                        height: auto !important;
+                        min-height: 180px;
+                        margin-bottom: 8px;
+                        padding: 15px;
+                        overflow: visible !important;
+                        border-radius: 4px;
                     }
 
-                    /* Ensure containers scroll internally if needed or fit content */
+                    .module h2 {
+                        font-size: 1rem;
+                        margin-bottom: 12px;
+                        color: var(--accent-color);
+                    }
+
                     .oscillators-container {
-                        max-height: 250px;
+                        max-height: none;
+                        overflow: visible !important;
                     }
 
-                    .fx-matrix .fx-grid {
+                    .osc-strip {
+                        height: auto !important;
+                        min-height: 60px;
+                        padding: 10px 0 !important;
+                        flex-wrap: wrap;
+                        gap: 12px;
+                        border-bottom: 1px solid #333;
+                    }
+
+                    .osc-strip select {
+                        width: 70px !important;
+                        font-size: 0.8rem !important;
+                        background: #222 !important;
+                        padding: 4px;
+                    }
+
+                    .fx-grid,
+                    .mod-grid {
                         grid-template-columns: repeat(2, 1fr) !important;
+                        max-height: none;
+                        overflow: visible !important;
+                        gap: 10px;
+                    }
+
+                    .visualizer-container {
+                        height: 250px;
+                    }
+
+                    .step-grid {
+                        grid-template-columns: repeat(4, 1fr) !important;
+                        grid-template-rows: repeat(8, 1fr) !important;
+                        min-height: 320px;
+                        gap: 6px;
+                    }
+
+                    .step-btn {
+                        height: 40px;
+                    }
+
+                    /* Touch optimization */
+                    .knob-dial {
+                        width: 38px !important;
+                        height: 38px !important;
+                        touch-action: none;
+                        border-width: 3px !important;
+                    }
+
+                    .knob-wrap {
+                        width: 48px !important;
+                    }
+
+                    .knob-indicator {
+                        height: 12px !important;
+                        width: 3px !important;
+                    }
+
+                    .knob-label {
+                        font-size: 0.65rem !important;
+                        margin-top: 4px;
+                    }
+
+                    .piano-key.white {
+                        width: 40px !important;
+                        height: 100px !important;
+                    }
+
+                    .piano-key.black {
+                        width: 26px !important;
+                        height: 60px !important;
+                    }
+
+                    .keyboard-controls {
+                        overflow-x: auto !important;
+                        white-space: nowrap;
+                        padding: 20px 5px !important;
+                        display: block !important;
+                        position: relative;
+                        -webkit-overflow-scrolling: touch;
+                        background: #000;
+                        border: 1px solid #222;
+                    }
+
+                    .keyboard-controls>div {
+                        display: inline-block;
+                        vertical-align: top;
+                    }
+
+                    #keys-container-wrapper {
+                        display: block !important;
                     }
                 }
             </style>
@@ -904,33 +1017,64 @@
                 let startY = 0;
                 let startVal = 0;
 
-                this.knob.addEventListener('mousedown', (e) => {
+                const handleStart = (y) => {
                     isDragging = true;
-                    startY = e.clientY;
+                    startY = y;
                     startVal = this.value;
                     document.body.style.cursor = 'ns-resize';
-                    e.preventDefault();
-                });
+                };
 
-                window.addEventListener('mousemove', (e) => {
+                const handleMove = (y) => {
                     if (!isDragging) return;
-                    const dy = startY - e.clientY;
+                    const dy = startY - y;
                     const range = this.max - this.min;
                     const delta = (dy / 200) * range;
 
                     let newVal = startVal + delta;
                     newVal = Math.max(this.min, Math.min(this.max, newVal));
-                    this.value = newVal;
-                    this.updateRotation();
-                    this.callback(this.value);
-                });
+                    if (newVal !== this.value) {
+                        this.value = newVal;
+                        this.updateRotation();
+                        this.callback(this.value);
+                    }
+                };
 
-                window.addEventListener('mouseup', () => {
+                const handleEnd = () => {
                     if (isDragging) {
                         isDragging = false;
                         document.body.style.cursor = 'default';
                     }
+                };
+
+                // Mouse Events
+                this.knob.addEventListener('mousedown', (e) => {
+                    handleStart(e.clientY);
+                    e.preventDefault();
                 });
+
+                window.addEventListener('mousemove', (e) => {
+                    handleMove(e.clientY);
+                });
+
+                window.addEventListener('mouseup', handleEnd);
+
+                // Touch Events
+                this.knob.addEventListener('touchstart', (e) => {
+                    handleStart(e.touches[0].clientY);
+                    // Prevent page scroll only when starting on knob
+                    // Actually touch-action: none on the element is better
+                    // e.preventDefault(); 
+                }, { passive: false });
+
+                window.addEventListener('touchmove', (e) => {
+                    if (isDragging) {
+                        handleMove(e.touches[0].clientY);
+                        if (e.cancelable) e.preventDefault(); // Stop page scroll while dragging
+                    }
+                }, { passive: false });
+
+                window.addEventListener('touchend', handleEnd);
+                window.addEventListener('touchcancel', handleEnd);
             }
 
             updateRotation() {
@@ -982,10 +1126,16 @@
 
                 // Keys Container
                 const keysContainer = document.createElement('div');
+                keysContainer.id = 'keys-container-wrapper'; // For mobile styling
                 keysContainer.style.position = 'relative';
-                keysContainer.style.height = '45px'; // Compact
-                keysContainer.style.display = 'flex';
-                keysContainer.style.justifyContent = 'center';
+                const isMobile = window.innerWidth <= 768;
+                const whiteWidth = isMobile ? 30 : 22;
+                const blackWidth = isMobile ? 20 : 14;
+                const blackOffset = isMobile ? 20 : 15;
+                const keyHeight = isMobile ? 70 : 45;
+
+                keysContainer.style.height = keyHeight + 'px';
+                keysContainer.style.display = 'block'; // Changed from flex
 
                 const baseFreq = 130.81; // C3
                 const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -1012,18 +1162,23 @@
 
                     if (!isBlack) {
                         btn.className = 'piano-key white';
-                        btn.style.left = (whiteIndex * 22) + 'px'; // 22px width
+                        btn.style.left = (whiteIndex * whiteWidth) + 'px';
+                        btn.style.width = whiteWidth + 'px';
+                        btn.style.height = keyHeight + 'px';
                         btn.style.position = 'absolute';
                         whiteIndex++;
                     } else {
                         btn.className = 'piano-key black';
-                        btn.style.left = ((whiteIndex - 1) * 22 + 15) + 'px'; // Adjusted offset
+                        btn.style.left = ((whiteIndex - 1) * whiteWidth + blackOffset) + 'px';
+                        btn.style.width = blackWidth + 'px';
+                        btn.style.height = (keyHeight * 0.6) + 'px';
                         btn.style.position = 'absolute';
+                        btn.style.zIndex = '30';
                     }
                     keysContainer.appendChild(btn);
                 }
 
-                keysContainer.style.width = (whiteIndex * 22) + 'px';
+                keysContainer.style.width = (whiteIndex * whiteWidth) + 'px';
                 container.appendChild(keysContainer);
 
                 octControls.querySelectorAll('.octave-btn').forEach(btn => {
