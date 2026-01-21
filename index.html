@@ -14,7 +14,6 @@
 </head>
 
 <body>
-    <canvas id="particle-layer"></canvas>
     <div id="app">
         <header class="top-bar">
             <h1>LIVE MODULARXIII</h1>
@@ -90,19 +89,6 @@
                         grid-template-columns: repeat(2, 1fr) !important;
                     }
                 }
-
-                /* Full Screen Particle Visualizer */
-                #particle-layer {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100vw;
-                    height: 100vh;
-                    z-index: 9999;
-                    pointer-events: none;
-                    /* Click through to UI */
-                    mix-blend-mode: screen;
-                }
             </style>
 
             <!-- SOUND GENERATION CORE -->
@@ -132,9 +118,8 @@
             <!-- VISUALIZER (Middle) -->
             <section class="module visualizer-module">
                 <h2>SCOPE / SPEC</h2>
-                <div class="visualizer-container">
-                    <canvas id="scope"></canvas>
-                    <canvas id="spectrum"></canvas>
+                <div class="visualizer-container" id="vis-container">
+                    <canvas id="vis-canvas"></canvas>
                 </div>
             </section>
         </main>
@@ -1406,13 +1391,9 @@
             }
 
             startVisualizer() {
-                const canvas = document.getElementById('particle-layer');
+                const container = document.getElementById('vis-container');
+                const canvas = document.getElementById('vis-canvas');
                 const ctx = canvas.getContext('2d');
-
-                // Also keep the small scope active for UI completeness, or just ignore it? 
-                // The prompt asks to "change the visualizer", implying the main experience.
-                // We'll use the main canvas for the requested "Full Screen Chaos".
-                // Optional: We can still draw a simple line on the small scope if we want, but let's focus on the big one.
 
                 const analyser = this.app.audioCore.analyser;
                 analyser.fftSize = 512;
@@ -1421,16 +1402,17 @@
                 const freqData = new Uint8Array(bufferLength);
 
                 let particles = [];
-                const maxParticles = 3000; // "many"
+                const maxParticles = 1500; // Condensed for smaller screen
                 let hueBase = 0;
 
                 // Resize handler
                 const resize = () => {
-                    canvas.width = window.innerWidth;
-                    canvas.height = window.innerHeight;
+                    canvas.width = container.clientWidth;
+                    canvas.height = container.clientHeight;
                 };
                 window.addEventListener('resize', resize);
-                resize();
+                // Initial resize slightly delayed to ensure layout
+                setTimeout(resize, 0);
 
                 class Particle {
                     constructor(w, h) {
@@ -1440,11 +1422,13 @@
                     init(w, h, explode = false) {
                         this.x = w / 2;
                         this.y = h / 2;
-                        
+
                         // "Circle" emitter
                         const angle = Math.random() * Math.PI * 2;
-                        const radius = explode ? Math.random() * 50 : 10 + Math.random() * 50;
-                        
+                        // Smaller radius relative to container min dimension
+                        const minDim = Math.min(w, h);
+                        const radius = explode ? Math.random() * (minDim * 0.4) : (minDim * 0.1) + Math.random() * (minDim * 0.3);
+
                         this.x += Math.cos(angle) * radius;
                         this.y += Math.sin(angle) * radius;
 
@@ -1452,10 +1436,10 @@
                         const speed = Math.random() * 2 + 0.5;
                         this.vx = Math.cos(angle) * speed;
                         this.vy = Math.sin(angle) * speed;
-                        
+
                         this.life = 1.0;
                         this.decay = Math.random() * 0.01 + 0.005;
-                        this.size = Math.random() * 3 + 1;
+                        this.size = Math.random() * 2 + 0.5; // Slightly smaller particles
                         this.hue = hueBase + Math.random() * 60;
                     }
 
@@ -1469,10 +1453,10 @@
                         this.vy += (Math.random() - 0.5) * 0.2;
 
                         this.life -= this.decay;
-                        
+
                         // If dead or out of bounds, respawn
                         if (this.life <= 0 || this.x < 0 || this.x > w || this.y < 0 || this.y > h) {
-                             this.init(w, h);
+                            this.init(w, h);
                         }
                     }
 
@@ -1485,12 +1469,24 @@
                 }
 
                 // Initialize random particles
-                for (let i = 0; i < maxParticles; i++) {
-                    const p = new Particle(canvas.width, canvas.height);
-                    p.x = Math.random() * canvas.width; // Start scattered too
-                    p.y = Math.random() * canvas.height;
-                    particles.push(p);
+                // We'll init them once we have dimensions in the draw loop if needed, 
+                // but easier to just wait for resize or standard init
+                // Let's safe-guard against 0 width
+                const tryInit = () => {
+                    if (canvas.width > 0) {
+                        particles = [];
+                        for (let i = 0; i < maxParticles; i++) {
+                            const p = new Particle(canvas.width, canvas.height);
+                            // Scatter initially
+                            p.x = Math.random() * canvas.width;
+                            p.y = Math.random() * canvas.height;
+                            particles.push(p);
+                        }
+                    } else {
+                        requestAnimationFrame(tryInit);
+                    }
                 }
+                setTimeout(tryInit, 100);
 
                 const draw = () => {
                     requestAnimationFrame(draw);
@@ -1498,29 +1494,30 @@
                     const w = canvas.width;
                     const h = canvas.height;
 
-                    // Fade out effect for trails
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                    if (particles.length === 0 && w > 0) tryInit();
+
+                    // Fade out effect
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
                     ctx.fillRect(0, 0, w, h);
 
                     // Get Audio Data
                     analyser.getByteFrequencyData(freqData);
                     analyser.getByteTimeDomainData(timeData);
 
-                    // Calculate Average Volume / Energy for modulation
+                    // Calculate Average Volume / Energy
                     let sum = 0;
-                    for(let i=0; i<bufferLength; i++) sum += freqData[i];
+                    for (let i = 0; i < bufferLength; i++) sum += freqData[i];
                     const avg = sum / bufferLength;
-                    const audioMod = avg / 128.0; // 0.0 to ~2.0
+                    const audioMod = avg / 128.0;
 
-                    hueBase += 0.5 + audioMod; // Shift colors over time
+                    hueBase += 0.5 + audioMod;
 
-                    // "Circle" chaos in center
-                    // We can draw a main chaotic circle ring
+                    // "Circle" chaos in center (Outline)
                     ctx.beginPath();
                     ctx.strokeStyle = `hsl(${hueBase}, 100%, 50%)`;
-                    ctx.lineWidth = 2 + audioMod * 5;
-                    const radius = 100 + audioMod * 50;
-                    ctx.arc(w/2, h/2, radius, 0, Math.PI*2);
+                    ctx.lineWidth = 1 + audioMod * 3;
+                    const centerRadius = (Math.min(w, h) * 0.2) + audioMod * 20;
+                    ctx.arc(w / 2, h / 2, centerRadius, 0, Math.PI * 2);
                     ctx.stroke();
 
                     // Particles
