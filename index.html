@@ -14,6 +14,7 @@
 </head>
 
 <body>
+    <canvas id="particle-layer"></canvas>
     <div id="app">
         <header class="top-bar">
             <h1>LIVE MODULARXIII</h1>
@@ -88,6 +89,19 @@
                     .fx-matrix .fx-grid {
                         grid-template-columns: repeat(2, 1fr) !important;
                     }
+                }
+
+                /* Full Screen Particle Visualizer */
+                #particle-layer {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    z-index: 9999;
+                    pointer-events: none;
+                    /* Click through to UI */
+                    mix-blend-mode: screen;
                 }
             </style>
 
@@ -1392,97 +1406,130 @@
             }
 
             startVisualizer() {
-                const scopeCanvas = document.getElementById('scope');
-                const scopeCtx = scopeCanvas.getContext('2d');
-                const specCanvas = document.getElementById('spectrum');
-                const specCtx = specCanvas.getContext('2d');
+                const canvas = document.getElementById('particle-layer');
+                const ctx = canvas.getContext('2d');
+
+                // Also keep the small scope active for UI completeness, or just ignore it? 
+                // The prompt asks to "change the visualizer", implying the main experience.
+                // We'll use the main canvas for the requested "Full Screen Chaos".
+                // Optional: We can still draw a simple line on the small scope if we want, but let's focus on the big one.
 
                 const analyser = this.app.audioCore.analyser;
-                analyser.fftSize = 256;
+                analyser.fftSize = 512;
                 const bufferLength = analyser.frequencyBinCount;
                 const timeData = new Uint8Array(bufferLength);
                 const freqData = new Uint8Array(bufferLength);
 
-                let hueOffset = 0;
+                let particles = [];
+                const maxParticles = 3000; // "many"
+                let hueBase = 0;
+
+                // Resize handler
+                const resize = () => {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                };
+                window.addEventListener('resize', resize);
+                resize();
+
+                class Particle {
+                    constructor(w, h) {
+                        this.init(w, h);
+                    }
+
+                    init(w, h, explode = false) {
+                        this.x = w / 2;
+                        this.y = h / 2;
+                        
+                        // "Circle" emitter
+                        const angle = Math.random() * Math.PI * 2;
+                        const radius = explode ? Math.random() * 50 : 10 + Math.random() * 50;
+                        
+                        this.x += Math.cos(angle) * radius;
+                        this.y += Math.sin(angle) * radius;
+
+                        // Chaotic velocity
+                        const speed = Math.random() * 2 + 0.5;
+                        this.vx = Math.cos(angle) * speed;
+                        this.vy = Math.sin(angle) * speed;
+                        
+                        this.life = 1.0;
+                        this.decay = Math.random() * 0.01 + 0.005;
+                        this.size = Math.random() * 3 + 1;
+                        this.hue = hueBase + Math.random() * 60;
+                    }
+
+                    update(w, h, audioMod) {
+                        // Eternal Motion & Chaos
+                        this.x += this.vx * (1 + audioMod * 2);
+                        this.y += this.vy * (1 + audioMod * 2);
+
+                        // Turbulence
+                        this.vx += (Math.random() - 0.5) * 0.2;
+                        this.vy += (Math.random() - 0.5) * 0.2;
+
+                        this.life -= this.decay;
+                        
+                        // If dead or out of bounds, respawn
+                        if (this.life <= 0 || this.x < 0 || this.x > w || this.y < 0 || this.y > h) {
+                             this.init(w, h);
+                        }
+                    }
+
+                    draw(ctx) {
+                        ctx.fillStyle = `hsla(${this.hue}, 100%, 60%, ${this.life})`;
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+
+                // Initialize random particles
+                for (let i = 0; i < maxParticles; i++) {
+                    const p = new Particle(canvas.width, canvas.height);
+                    p.x = Math.random() * canvas.width; // Start scattered too
+                    p.y = Math.random() * canvas.height;
+                    particles.push(p);
+                }
 
                 const draw = () => {
                     requestAnimationFrame(draw);
 
-                    // Unified Dimensions
-                    const w = scopeCanvas.clientWidth;
-                    const h = scopeCanvas.clientHeight;
-                    scopeCanvas.width = w;
-                    scopeCanvas.height = h;
-                    specCanvas.width = w;
-                    specCanvas.height = h;
+                    const w = canvas.width;
+                    const h = canvas.height;
 
-                    const cx = w / 2;
-                    const cy = h / 2;
+                    // Fade out effect for trails
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                    ctx.fillRect(0, 0, w, h);
 
-                    // Get Data
-                    analyser.getByteTimeDomainData(timeData);
+                    // Get Audio Data
                     analyser.getByteFrequencyData(freqData);
+                    analyser.getByteTimeDomainData(timeData);
 
-                    hueOffset += 2;
+                    // Calculate Average Volume / Energy for modulation
+                    let sum = 0;
+                    for(let i=0; i<bufferLength; i++) sum += freqData[i];
+                    const avg = sum / bufferLength;
+                    const audioMod = avg / 128.0; // 0.0 to ~2.0
 
-                    // 1. SCOPE: Chaotic "String Theory"
-                    // Clear with fade for trails
-                    scopeCtx.fillStyle = 'rgba(0,0,0,0.2)';
-                    scopeCtx.fillRect(0, 0, w, h);
+                    hueBase += 0.5 + audioMod; // Shift colors over time
 
-                    scopeCtx.lineWidth = 2;
-                    scopeCtx.beginPath();
+                    // "Circle" chaos in center
+                    // We can draw a main chaotic circle ring
+                    ctx.beginPath();
+                    ctx.strokeStyle = `hsl(${hueBase}, 100%, 50%)`;
+                    ctx.lineWidth = 2 + audioMod * 5;
+                    const radius = 100 + audioMod * 50;
+                    ctx.arc(w/2, h/2, radius, 0, Math.PI*2);
+                    ctx.stroke();
 
-                    for (let i = 0; i < bufferLength; i++) {
-                        const v = (timeData[i] / 128.0) - 1; // -1 to 1
-                        const angle = (i / bufferLength) * Math.PI * 8 + (hueOffset * 0.01); // Spin
-                        const r = (Math.min(w, h) / 2) * (1 + v * 3); // Explode outwards
-
-                        const x = cx + Math.cos(angle) * r;
-                        const y = cy + Math.sin(angle) * r;
-
-                        scopeCtx.strokeStyle = `hsl(${(i * 5 + hueOffset) % 360}, 100%, 50%)`;
-                        if (i === 0) scopeCtx.moveTo(x, y);
-                        else scopeCtx.lineTo(x, y);
-
-                        // Random sparks
-                        if (Math.abs(v) > 0.1 && Math.random() > 0.8) {
-                            scopeCtx.fillStyle = '#fff';
-                            scopeCtx.fillRect(x, y, 2, 2);
-                        }
-                    }
-                    scopeCtx.stroke();
-
-                    // 2. SPECTRUM: "Liquid Plasma"
-                    specCtx.fillStyle = 'rgba(0,0,0,0.3)'; // Trails
-                    specCtx.fillRect(0, 0, w, h);
-
-                    specCtx.globalCompositeOperation = 'lighter'; // Additive blending
-
-                    for (let i = 0; i < bufferLength; i += 2) {
-                        const val = freqData[i];
-                        if (val < 10) continue;
-
-                        const rS = (val / 255) * (Math.min(w, h) * 0.8);
-                        const angle = (i / bufferLength) * Math.PI * 2 + (hueOffset * 0.05);
-
-                        const x = cx + Math.cos(angle) * (rS * 0.5);
-                        const y = cy + Math.sin(angle) * (rS * 0.5);
-
-                        specCtx.beginPath();
-                        specCtx.arc(x, y, rS * 0.2, 0, Math.PI * 2);
-                        specCtx.fillStyle = `hsl(${(i * 2 + hueOffset * 2) % 360}, 100%, 60%)`;
-                        specCtx.fill();
-
-                        // Secondary chaotic orb
-                        specCtx.beginPath();
-                        const x2 = cx + Math.sin(angle * 2) * (rS);
-                        const y2 = cy + Math.cos(angle * 3) * (rS);
-                        specCtx.arc(x2, y2, rS * 0.1, 0, Math.PI * 2);
-                        specCtx.fillStyle = `hsl(${(i * 10 - hueOffset) % 360}, 80%, 50%)`;
-                        specCtx.fill();
-                    }
-                    specCtx.globalCompositeOperation = 'source-over';
+                    // Particles
+                    ctx.globalCompositeOperation = 'lighter';
+                    particles.forEach(p => {
+                        p.update(w, h, audioMod);
+                        p.draw(ctx);
+                    });
+                    ctx.globalCompositeOperation = 'source-over';
                 };
                 draw();
             }
